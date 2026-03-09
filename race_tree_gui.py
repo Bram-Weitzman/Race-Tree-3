@@ -1,0 +1,192 @@
+import customtkinter as ctk
+import tkinter.filedialog as fd
+import threading
+import subprocess
+import os
+
+ctk.set_appearance_mode("Dark")
+ctk.set_default_color_theme("blue")
+
+class RaceTreeApp(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+
+        self.title("🏎️ RaceTree 3.0 Pro")
+        self.geometry("600x650")
+
+        self.sponsor_images = []
+        self.output_filepath = ""
+        self.process = None
+
+        # --- UI LAYOUT ---
+        self.grid_columnconfigure(0, weight=1)
+
+        # Header
+        self.header = ctk.CTkLabel(self, text="RaceTree 3.0 Output Generator", font=ctk.CTkFont(size=24, weight="bold"))
+        self.header.grid(row=0, column=0, padx=20, pady=(20, 10))
+
+        # Session ID
+        self.session_frame = ctk.CTkFrame(self)
+        self.session_frame.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
+        self.session_frame.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkLabel(self.session_frame, text="Speedhive Session ID:").grid(row=0, column=0, padx=10, pady=10)
+        self.session_entry = ctk.CTkEntry(self.session_frame, placeholder_text="e.g. 10929040")
+        self.session_entry.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
+
+        # Output File
+        self.output_frame = ctk.CTkFrame(self)
+        self.output_frame.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        self.output_frame.grid_columnconfigure(1, weight=1)
+        
+        self.btn_output = ctk.CTkButton(self.output_frame, text="Save Output As...", command=self.pick_output_file)
+        self.btn_output.grid(row=0, column=0, padx=10, pady=10)
+        
+        self.lbl_output = ctk.CTkLabel(self.output_frame, text="No file selected.", text_color="gray")
+        self.lbl_output.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+
+        # Sponsors Files
+        self.sponsor_frame = ctk.CTkFrame(self)
+        self.sponsor_frame.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
+        self.sponsor_frame.grid_columnconfigure(1, weight=1)
+        
+        self.btn_sponsors = ctk.CTkButton(self.sponsor_frame, text="Add Sponsor Images (Max 10)", command=self.pick_sponsors)
+        self.btn_sponsors.grid(row=0, column=0, padx=10, pady=10)
+        
+        self.lbl_sponsors = ctk.CTkLabel(self.sponsor_frame, text="0 images selected.", text_color="gray")
+        self.lbl_sponsors.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+
+        # Output Console
+        self.console = ctk.CTkTextbox(self, height=150)
+        self.console.grid(row=4, column=0, padx=20, pady=10, sticky="nsew")
+        self.grid_rowconfigure(4, weight=1)
+
+        # Action Buttons
+        self.action_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.action_frame.grid(row=5, column=0, padx=20, pady=20, sticky="ew")
+        self.action_frame.grid_columnconfigure((0, 1), weight=1)
+        
+        self.btn_generate = ctk.CTkButton(self.action_frame, text="GENERATE VIDEO", fg_color="green", hover_color="darkgreen", command=self.start_generation)
+        self.btn_generate.grid(row=0, column=0, padx=10, sticky="ew")
+        
+        self.btn_cancel = ctk.CTkButton(self.action_frame, text="CANCEL", fg_color="red", hover_color="darkred", state="disabled", command=self.cancel_generation)
+        self.btn_cancel.grid(row=0, column=1, padx=10, sticky="ew")
+
+    def pick_output_file(self):
+        file = fd.asksaveasfilename(defaultextension=".mp4", filetypes=[("MP4 Video", "*.mp4")])
+        if file:
+            self.output_filepath = file
+            self.lbl_output.configure(text=os.path.basename(file), text_color="white")
+
+    def pick_sponsors(self):
+        files = fd.askopenfilenames(title="Select Sponsor Images", filetypes=[("Images", "*.png;*.jpg;*.jpeg;*.bmp")])
+        if files:
+            # Enforce max 10
+            self.sponsor_images = list(files)[:10]
+            self.lbl_sponsors.configure(text=f"{len(self.sponsor_images)} images selected.", text_color="white")
+
+    def log(self, text):
+        self.console.insert("end", text + "\n")
+        self.console.see("end")
+
+    def set_gui_state(self, is_running):
+        state = "disabled" if is_running else "normal"
+        self.session_entry.configure(state=state)
+        self.btn_output.configure(state=state)
+        self.btn_sponsors.configure(state=state)
+        
+        if is_running:
+            self.btn_generate.configure(state="disabled")
+            self.btn_cancel.configure(state="normal")
+        else:
+            self.btn_generate.configure(state="normal")
+            self.btn_cancel.configure(state="disabled")
+
+    def start_generation(self):
+        session_id = self.session_entry.get().strip()
+        if not session_id:
+            self.log("❌ Error: You must enter a Speedhive Session ID.")
+            return
+
+        self.console.delete("1.0", "end")
+        self.set_gui_state(True)
+        
+        # Run process in separate thread to keep UI responsive
+        thread = threading.Thread(target=self.run_pipeline, args=(session_id,))
+        thread.daemon = True
+        thread.start()
+
+    def run_pipeline(self, session_id):
+        try:
+            # Step 1: Data Fetching. We run race_tree_data.py via Popen and write the session ID to stdin.
+            self.log(f"--- STEP 1: FETCHING DATA FOR {session_id} ---")
+            
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
+            
+            data_cmd = ["python", "f:/RACE_TREE_3.0/race_tree_data.py"]
+            self.process = subprocess.Popen(data_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace', env=env)
+            
+            # Send session ID and "press enter"
+            self.process.stdin.write(f"{session_id}\n")
+            self.process.stdin.flush()
+            
+            for line in self.process.stdout:
+                self.log(line.strip())
+            
+            self.process.wait()
+            if self.process.returncode != 0:
+                self.log("❌ Error: Data compilation failed.")
+                self.set_gui_state(False)
+                return
+                
+            json_file = f"f:/RACE_TREE_3.0/RaceSessionData_{session_id}.json"
+            if not os.path.exists(json_file):
+                self.log("❌ Error: JSON file was not generated.")
+                self.set_gui_state(False)
+                return
+
+            # Step 2: Video Generation
+            self.log("\n--- STEP 2: GENERATING OVERLAY VIDEO ---")
+            self.log("This may take 4 to 15 minutes depending on your GPU...")
+            
+            video_cmd = ["python", "f:/RACE_TREE_3.0/race_tree_video.py", session_id]
+            
+            if self.output_filepath:
+                video_cmd.extend(["--output", self.output_filepath])
+            
+            if self.sponsor_images:
+                video_cmd.append("--sponsors")
+                video_cmd.extend(self.sponsor_images)
+                
+            self.process = subprocess.Popen(video_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace', env=env)
+            
+            for line in self.process.stdout:
+                self.log(line.strip())
+                
+            self.process.wait()
+            
+            if self.process.returncode == 0:
+                self.log("\n✅ Pipeline Complete! Your video is ready!")
+            elif self.process.returncode != -15: # Not terminated by user
+                self.log("\n❌ Video Generation Failed.")
+                
+        except Exception as e:
+            self.log(f"Critical Error: {e}")
+        finally:
+            self.set_gui_state(False)
+            self.process = None
+
+    def cancel_generation(self):
+        if self.process:
+            self.log("\n⚠️ Cancelling running pipeline...")
+            
+            # Use taskkill to kill the subprocess and its children (ffmpeg) on Windows
+            subprocess.call(['taskkill', '/F', '/T', '/PID', str(self.process.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            self.process = None
+            self.set_gui_state(False)
+
+if __name__ == "__main__":
+    app = RaceTreeApp()
+    app.mainloop()

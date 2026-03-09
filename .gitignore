@@ -1,0 +1,6 @@
+__pycache__/
+*.mp4
+*.zip
+*.json
+backup_v3/
+ffmpeg-8.0.1-essentials_build/
