@@ -4,3 +4,6 @@ __pycache__/
 *.json
 backup_v3/
 ffmpeg-8.0.1-essentials_build/
+.env
+.env.*
+*secret*
