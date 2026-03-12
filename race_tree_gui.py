@@ -34,9 +34,21 @@ class RaceTreeApp(ctk.CTk):
         self.session_entry = ctk.CTkEntry(self.session_frame, placeholder_text="e.g. 10929040")
         self.session_entry.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
 
+        # Grid Source Session ID
+        self.grid_frame = ctk.CTkFrame(self)
+        self.grid_frame.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        self.grid_frame.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkLabel(self.grid_frame, text="Grid Source Session ID (Opt):").grid(row=0, column=0, padx=10, pady=10)
+        self.grid_source_entry = ctk.CTkEntry(self.grid_frame, placeholder_text="e.g. 10839874")
+        self.grid_source_entry.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
+        
+        self.generate_grid_checkbox = ctk.CTkCheckBox(self.grid_frame, text="Generate Starting Grid Image?")
+        self.generate_grid_checkbox.grid(row=1, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="w")
+
         # Output File
         self.output_frame = ctk.CTkFrame(self)
-        self.output_frame.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        self.output_frame.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
         self.output_frame.grid_columnconfigure(1, weight=1)
         
         self.btn_output = ctk.CTkButton(self.output_frame, text="Save Output As...", command=self.pick_output_file)
@@ -47,7 +59,7 @@ class RaceTreeApp(ctk.CTk):
 
         # Sponsors Files
         self.sponsor_frame = ctk.CTkFrame(self)
-        self.sponsor_frame.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
+        self.sponsor_frame.grid(row=4, column=0, padx=20, pady=10, sticky="ew")
         self.sponsor_frame.grid_columnconfigure(1, weight=1)
         
         self.btn_sponsors = ctk.CTkButton(self.sponsor_frame, text="Add Sponsor Images (Max 10)", command=self.pick_sponsors)
@@ -58,12 +70,12 @@ class RaceTreeApp(ctk.CTk):
 
         # Output Console
         self.console = ctk.CTkTextbox(self, height=150)
-        self.console.grid(row=4, column=0, padx=20, pady=10, sticky="nsew")
-        self.grid_rowconfigure(4, weight=1)
+        self.console.grid(row=5, column=0, padx=20, pady=10, sticky="nsew")
+        self.grid_rowconfigure(5, weight=1)
 
         # Action Buttons
         self.action_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.action_frame.grid(row=5, column=0, padx=20, pady=20, sticky="ew")
+        self.action_frame.grid(row=6, column=0, padx=20, pady=20, sticky="ew")
         self.action_frame.grid_columnconfigure((0, 1), weight=1)
         
         self.btn_generate = ctk.CTkButton(self.action_frame, text="GENERATE VIDEO", fg_color="green", hover_color="darkgreen", command=self.start_generation)
@@ -92,6 +104,8 @@ class RaceTreeApp(ctk.CTk):
     def set_gui_state(self, is_running):
         state = "disabled" if is_running else "normal"
         self.session_entry.configure(state=state)
+        self.grid_source_entry.configure(state=state)
+        self.generate_grid_checkbox.configure(state=state)
         self.btn_output.configure(state=state)
         self.btn_sponsors.configure(state=state)
         
@@ -104,6 +118,8 @@ class RaceTreeApp(ctk.CTk):
 
     def start_generation(self):
         session_id = self.session_entry.get().strip()
+        grid_source_id = self.grid_source_entry.get().strip()
+        gen_grid = self.generate_grid_checkbox.get() == 1
         if not session_id:
             self.log("❌ Error: You must enter a Speedhive Session ID.")
             return
@@ -112,24 +128,25 @@ class RaceTreeApp(ctk.CTk):
         self.set_gui_state(True)
         
         # Run process in separate thread to keep UI responsive
-        thread = threading.Thread(target=self.run_pipeline, args=(session_id,))
+        thread = threading.Thread(target=self.run_pipeline, args=(session_id, grid_source_id, gen_grid))
         thread.daemon = True
         thread.start()
 
-    def run_pipeline(self, session_id):
+    def run_pipeline(self, session_id, grid_source_id, gen_grid):
         try:
-            # Step 1: Data Fetching. We run race_tree_data.py via Popen and write the session ID to stdin.
+            # Step 1: Data Fetching. We run race_tree_data.py via Popen.
             self.log(f"--- STEP 1: FETCHING DATA FOR {session_id} ---")
+            if grid_source_id:
+                self.log(f"            (Using alternate grid from {grid_source_id})")
             
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
             
-            data_cmd = ["python", "f:/RACE_TREE_3.0/race_tree_data.py"]
-            self.process = subprocess.Popen(data_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace', env=env)
-            
-            # Send session ID and "press enter"
-            self.process.stdin.write(f"{session_id}\n")
-            self.process.stdin.flush()
+            data_cmd = ["python", "f:/RACE_TREE_3.0/race_tree_data.py", session_id]
+            if grid_source_id:
+                data_cmd.extend(["--grid-source", grid_source_id])
+                
+            self.process = subprocess.Popen(data_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace', env=env)
             
             for line in self.process.stdout:
                 self.log(line.strip())
@@ -147,8 +164,17 @@ class RaceTreeApp(ctk.CTk):
                 return
 
             # Step 2: Video Generation
-            self.log("\n--- STEP 2: GENERATING OVERLAY VIDEO ---")
-            self.log("This may take 4 to 15 minutes depending on your GPU...")
+            if gen_grid:
+                self.log(f"--- STEP 2: GENERATING HIGH-FIDELITY STARTING GRID ---")
+                grid_cmd = ["python", "f:/RACE_TREE_3.0/race_tree_grid.py", session_id]
+                self.process = subprocess.Popen(grid_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace', env=env)
+                
+                for line in self.process.stdout:
+                    self.log(line.strip())
+                self.process.wait()
+
+            # Step 3: Video Generation. We run race_tree_video.py via Popen.
+            self.log(f"--- STEP 3: RENDERING VIDEO (HARDWARE NVENC) ---")
             
             video_cmd = ["python", "f:/RACE_TREE_3.0/race_tree_video.py", session_id]
             

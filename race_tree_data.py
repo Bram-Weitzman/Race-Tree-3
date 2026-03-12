@@ -19,6 +19,7 @@ import json
 import os
 import requests
 import sys
+import argparse
 from typing import Dict, Any, List, Optional, Tuple
 
 # -------------------------------------------------------------------------
@@ -172,41 +173,27 @@ def print_progress(current: int, total: int, prefix: str = '', length: int = 40)
 # CORE DATA PROCESSING
 # -------------------------------------------------------------------------
 
-def clean_all_kart_numbers(lap_data_all: List[Dict]) -> None:
-    """
-    Iterates through all driver records and cleans their kart numbers IN PLACE
-    using the clean_kart_number() utility.
-    """
-    for driver_data in lap_data_all:
-        try:
-            info = driver_data.get('lapDataInfo', {}).get('participantInfo', {})
-            raw_kart = info.get('startNr', "")
-            info['startNr'] = clean_kart_number(raw_kart)
-        except Exception as e:
-            print(f"⚠️ Error cleaning kart number: {e}")
-
-def get_starting_grid(lap_data_all: List[Dict]) -> List[Dict]:
+def get_starting_grid(classification_rows: List[Dict]) -> List[Dict]:
     """
     Extracts the starting grid (positions, names, and kart numbers) from 
-    the raw API payload.
+    the classification data payload. This ensures we get the actual ending
+    results for Qualification sessions, rather than their initial starting positions.
     
     Args:
-        lap_data_all (list): The full array of lap data fetched from the API.
+        classification_rows (list): The 'rows' array from the classification API endpoint.
         
     Returns:
         List[Dict]: An ordered list of drivers representing the starting grid.
     """
     grid = []
-    for entry in lap_data_all:
-        info = entry.get('lapDataInfo', {}).get('participantInfo', {})
-        
-        start_pos = info.get('startPos')
-        # We only care about drivers who actually started
-        if start_pos is not None:
+    for entry in classification_rows:
+        pos = entry.get('position')
+        # We only care about drivers who actually placed
+        if pos is not None:
             grid.append({
-                "position": start_pos,
-                "name": info.get('name', "Unknown"),
-                "kartNumber": info.get('startNr', "Unknown")
+                "position": pos,
+                "name": entry.get('name', "Unknown"),
+                "kartNumber": clean_kart_number(entry.get('startNumber', "Unknown"))
             })
             
     # Sort the grid by position number ascending (1, 2, 3...)
@@ -356,17 +343,45 @@ def compile_lap_history(
 # -------------------------------------------------------------------------
 
 def main():
+    parser = argparse.ArgumentParser(description="RaceTree 3.0 - Data Processing Pipeline")
+    parser.add_argument("session_id", nargs="?", help="Speedhive Session ID (e.g., 10415811)")
+    parser.add_argument("--grid-source", dest="grid_source_id", default=None, help="Optional Session ID to pull the Starting Grid from")
+    args = parser.parse_args()
+
     print("=" * 50)
     print("🏎️  RaceTree 3.0 - Data Processing Pipeline 🏎️")
     print("=" * 50)
     
-    # 1. Ask for Session ID
-    session_id = input("\nEnter Speedhive Session ID (e.g., 10415811): ").strip()
-    if not session_id:
-        print("❌ Invalid Session ID. Exiting.")
-        sys.exit(1)
+    if args.session_id:
+        session_id = args.session_id.strip()
+        grid_source_id = args.grid_source_id.strip() if args.grid_source_id else None
+    else:
+        # Fallback to interactive input
+        session_id = input("\nEnter Speedhive Session ID (e.g., 10415811): ").strip()
+        if not session_id:
+            print("❌ Invalid Session ID. Exiting.")
+            sys.exit(1)
+            
+        grid_source_id = input("Enter Grid Source Session ID (Optional, press Enter to skip): ").strip()
+        grid_source_id = grid_source_id if grid_source_id else None
         
     print(f"\n[1/5] 📡 Fetching Classification Data for Session {session_id}...")
+    
+    # Pre-Fetch Event/Session Info
+    session_info_url = f"{BASE_API_URL}{session_id}"
+    session_info = fetch_json(session_info_url)
+    session_name = session_info.get('name', f"Session {session_id}") if session_info else f"Session {session_id}"
+    
+    event_id = session_info.get('eventId') if session_info else None
+    event_name = "UNKNOWN EVENT"
+    if event_id:
+        event_url = f"https://eventresults-api.speedhive.com/api/v0.2.3/eventresults/events/{event_id}"
+        event_info = fetch_json(event_url)
+        event_name = event_info.get('name', f"Event {event_id}") if event_info else f"Event {event_id}"
+        
+    print(f"      📌 Event: {event_name}")
+    print(f"      📌 Session: {session_name}")
+    
     class_url = f"{BASE_API_URL}{session_id}/classification"
     classification_data = fetch_json(class_url)
     
@@ -395,8 +410,32 @@ def main():
 
     # 3. Clean and prepare grid data
     print(f"\n[3/5] 🧼 Cleaning data and determining Starting Grid...")
-    clean_all_kart_numbers(lap_data_all)
-    starting_grid = get_starting_grid(lap_data_all)
+    # clean_all_kart_numbers(lap_data_all)  # Removed since we clean directly in get_starting_grid
+    
+    if grid_source_id:
+        print(f"      📡 Fetching Alternate Starting Grid from Session {grid_source_id}...")
+        grid_class_url = f"{BASE_API_URL}{grid_source_id}/classification"
+        grid_class_data = fetch_json(grid_class_url)
+        
+        if not grid_class_data or 'rows' not in grid_class_data:
+            print("❌ Could not extract alternate grid classification.")
+            sys.exit(1)
+            
+        grid_num_drivers = len(grid_class_data['rows'])
+        grid_lap_data_all = []
+        grid_laps_base_url = f"{BASE_API_URL}{grid_source_id}/lapdata/"
+        
+        for i in range(1, grid_num_drivers + 1):
+            lap_url = f"{grid_laps_base_url}{i}/laps"
+            lap_json = fetch_json(lap_url)
+            if lap_json:
+                grid_lap_data_all.append(lap_json)
+                
+        # Remove clean_all_kart_numbers since logic is moved inside get_starting_grid
+        starting_grid = get_starting_grid(grid_class_data['rows'])
+        print("      ✅ Successfully imported Starting Grid from alternate source.")
+    else:
+        starting_grid = get_starting_grid(classification_data['rows'])
     
     # 4. Perform lap and race math
     print(f"\n[4/5] ⏱️ Calculating race timeline and position histories...")
@@ -419,6 +458,8 @@ def main():
     
     master_data = {
         "SessionID": session_id,
+        "EventName": event_name,
+        "SessionName": session_name,
         "TotalDrivers": num_drivers,
         "TotalLaps": total_laps - 1,
         "CalculatedRaceStart_Seconds": race_start_time,

@@ -76,12 +76,14 @@ if len(sys.argv) > 1:
     parser = argparse.ArgumentParser(description="RaceTree Video Generator")
     parser.add_argument("session_id", type=str, help="Speedhive Session ID")
     parser.add_argument("--test", action="store_true", help="Limit to 120s test render")
+    parser.add_argument("--generate-grid", action="store_true", help="Trigger grid image generation flag")
     parser.add_argument("--output", type=str, help="Output MP4 file path")
     parser.add_argument("--sponsors", type=str, nargs='*', help="Paths to sponsor images")
     
     args = parser.parse_args()
     session_id = args.session_id
     is_test = args.test
+    generate_grid = getattr(args, "generate_grid", False) # Safely get it just in case
     output_file_override = args.output
     if args.sponsors:
         sponsor_images_paths = args.sponsors
