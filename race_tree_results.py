@@ -41,7 +41,7 @@ def parse_driver(name: str) -> tuple[str, str]:
     return formatted_name, badge
 
 def main():
-    parser = argparse.ArgumentParser(description="Starting Grid Generator")
+    parser = argparse.ArgumentParser(description="Official Results Generator")
     parser.add_argument("session_id", type=str, help="Speedhive Session ID")
     parser.add_argument("--output-dir", type=str, default="", help="Directory to save the output image")
     args = parser.parse_args()
@@ -57,9 +57,14 @@ def main():
     with open(input_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
         
-    starting_grid = data.get("StartingGrid", [])
+    laps = data.get("Laps", [])
+    if laps:
+        starting_grid = sorted(laps[-1].get("driver_records", []), key=lambda x: x.get("position", 999))
+    else:
+        starting_grid = data.get("StartingGrid", [])
+        
     if not starting_grid:
-        print("❌ No starting grid found in data.")
+        print("❌ No results found in data.")
         sys.exit(1)
         
     # Create Canvas (Transparent)
@@ -142,7 +147,7 @@ def main():
     
     # Banner replace
     banner_y = event_y + 100
-    banner_path = "assets/starting-grid-banner.png"
+    banner_path = "assets/results-banner.png"
     banner_height = 60
     
     if os.path.exists(banner_path):
@@ -170,9 +175,9 @@ def main():
         x = START_X + (col * X_SPACING)
         y = START_Y + (row * Y_SPACING)
         
-        pos_str = str(driver["position"])
-        kart_num = str(driver["kartNumber"])
-        name_str, badge = parse_driver(driver["name"])
+        pos_str = str(driver.get("position", i+1))
+        kart_num = str(driver.get("kartNumber", "UNK"))
+        name_str, badge = parse_driver(driver.get("name", "Unknown"))
         
         # 1. Position Background Circle (Dark Grey)
         circle_radius = 16
@@ -216,7 +221,7 @@ def main():
         name_x = kart_x + 110
         draw.text((name_x, y + 8), name_str, font=row_font, fill=CYAN)
         
-    output_filename = f"StartingGrid_{session_id}.png"
+    output_filename = f"OfficialResults_{session_id}.png"
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
         save_path = os.path.join(output_dir, output_filename)
@@ -224,7 +229,7 @@ def main():
         save_path = output_filename
         
     img.save(save_path)
-    print(f"✅ Saved transparent grid to {save_path}")
+    print(f"✅ Saved transparent results grid to {save_path}")
 
 if __name__ == "__main__":
     main()
