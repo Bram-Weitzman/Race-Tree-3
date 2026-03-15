@@ -205,7 +205,7 @@ class RaceTreeApp(ctk.CTk):
             if grid_source_id:
                 data_cmd.extend(["--grid-source", grid_source_id])
                 
-            self.process = subprocess.Popen(data_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace', env=env)
+            self.process = subprocess.Popen(data_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace', env=env, cwd="f:/RACE_TREE_3.0")
             
             for line in self.process.stdout:
                 self.log(line.strip())
@@ -228,7 +228,7 @@ class RaceTreeApp(ctk.CTk):
                 grid_cmd = ["python", "f:/RACE_TREE_3.0/race_tree_grid.py", session_id]
                 if self.images_dir:
                     grid_cmd.extend(["--output-dir", self.images_dir])
-                self.process = subprocess.Popen(grid_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace', env=env)
+                self.process = subprocess.Popen(grid_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace', env=env, cwd="f:/RACE_TREE_3.0")
                 
                 for line in self.process.stdout:
                     self.log(line.strip())
@@ -240,7 +240,7 @@ class RaceTreeApp(ctk.CTk):
                 results_cmd = ["python", "f:/RACE_TREE_3.0/race_tree_results.py", session_id]
                 if self.images_dir:
                     results_cmd.extend(["--output-dir", self.images_dir])
-                self.process = subprocess.Popen(results_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace', env=env)
+                self.process = subprocess.Popen(results_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace', env=env, cwd="f:/RACE_TREE_3.0")
                 
                 for line in self.process.stdout:
                     self.log(line.strip())
@@ -258,7 +258,7 @@ class RaceTreeApp(ctk.CTk):
                 video_cmd.append("--sponsors")
                 video_cmd.extend(self.sponsor_images)
                 
-            self.process = subprocess.Popen(video_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace', env=env)
+            self.process = subprocess.Popen(video_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, encoding='utf-8', errors='replace', env=env, cwd="f:/RACE_TREE_3.0")
             
             for line in self.process.stdout:
                 self.log(line.strip())
